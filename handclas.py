@@ -1,8 +1,9 @@
-import random
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import datetime
+
 
 
 #import psycopg as psql
@@ -10,18 +11,30 @@ import matplotlib.pyplot as plt
 import configparser
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 from sklearn.metrics import confusion_matrix, roc_curve, auc
 
 
-from tensorflow.keras.models import Sequential
-from tensorflow.keras import layers
-from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras import layers, optimizers
+from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, EarlyStopping, TensorBoard
 import tensorflow as tf
+
+
+from keras.regularizers import l2
+
+
+from tensorflow.keras.utils import timeseries_dataset_from_array, normalize
+
 
 
 config = configparser.ConfigParser()
 config.read('config.ini')
+
+
+
+devices = tf.config.experimental.list_physical_devices('GPU')
+tf.config.experimental.set_memory_growth(devices[0], True)
 # %%
 
 
@@ -73,78 +86,167 @@ SAMPLE_SIZE = 75
 # %%
 # LOADING
 df = pd.read_csv("gesty.csv")
-
+df.fillna(method='backfill', inplace=True)
+print(f'NaN containment:{df.isnull().any()}')
 num_rows = df.shape[0] // SAMPLE_SIZE
 num_ts = num_rows*SAMPLE_SIZE
 
 
 # %%
 # DATA AND LABELS
-X = df.iloc[:num_ts,1:17].values
+x = df.iloc[:num_ts,1:17].values
 y = df.iloc[:num_ts,17].values
 
-
-# %%
-# ENCODING
-cat_encode = layers.StringLookup(output_mode='int')
-cat_encode.adapt(y)
-y = cat_encode(y)
+num_classes = len(np.unique(y))
 
 
 # %%
-# SCALING
+# CONVERTING & ENCODING LABELS
+Y_resh = np.reshape(y,(num_ts//SAMPLE_SIZE,SAMPLE_SIZE,1))
+Y = Y_resh[:,1,:]
+
+#Y_enc = [int.from_bytes(char.encode('utf-8'), byteorder="big") for char in Y ]
+
+Y_enc = pd.get_dummies(Y.flatten())
+
+
+# %%
+# CONVERTING & SCALING VALUES
 scaler = MinMaxScaler()
-X = scaler.fit_transform(X)
-X = tf.cast(X, dtype='float32')
+X_scaled = scaler.fit_transform(x)
+X_scaled = tf.cast(X_scaled, dtype='float32')
 
-
-# %%
-# CONVERTING
-X = np.reshape(X,(num_ts//SAMPLE_SIZE, SAMPLE_SIZE, X.shape[1]))
-y = np.reshape(y,(num_ts//SAMPLE_SIZE, SAMPLE_SIZE,36))
+X_resh = np.reshape(X_scaled,(num_ts//SAMPLE_SIZE, SAMPLE_SIZE, X_scaled.shape[1]))
 
 
 # %%
 # SPLITTING
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
-num_classes = len(np.unique(y_train))
+X_train, X_test, Y_train, Y_test = train_test_split(X_resh, Y_enc, test_size=0.2, random_state=0, stratify=Y)
+
+train_dataset = (X_train, Y_train)
+test_dataset = (X_test, Y_test)
+
+
+
+#train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train))
+#test_dataset = tf.data.Dataset.from_tensor_slices((X_test, y_test))
 
 
 # %%
 # MODEL CONSTANTS
-callbacks = [
-    ModelCheckpoint(
-        "best_model.h5", save_best_only=True, monitor="val_loss"
-    ),
-    ReduceLROnPlateau(
-        monitor="val_loss", factor=0.5, patience=20, min_lr=0.0001
-    ),
-    EarlyStopping(monitor="val_loss", patience=50, verbose=1),
-]
+LAYERS = np.dot(2,[75, 75, 75])                # number of units in hidden and output layers
+M_TRAIN = X_train.shape[0]                     # number of training examples (2D)
+M_TEST = X_test.shape[0]                       # number of test examples (2D),full=X_test.shape[0]
+N = X_train.shape[2]                           # number of features
+BATCH = M_TRAIN//100                           # batch size
+EPOCH = 100                                    # number of epochs
+LR = 2e-3                          # learning rate of the gradient descent
+LAMBD = 3e-2                         # lambda in L2 regularizaion
+DP = 0.0                            # dropout rate
+RDP = 0.0                            # recurrent dropout rate
+
+log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+
+checkpoint = ModelCheckpoint(filepath=log_dir+'/models/'+'model.{epoch:02d}-{val_categorical_accuracy:.2f}.hdf5',
+                             monitor='val_categorical_accuracy',
+                             verbose=1,
+                             save_best_only=True,
+                             save_weights_only=False,
+                             mode='max')
+
+lr_decay = ReduceLROnPlateau(monitor='loss',
+                             patience=1, verbose=1,
+                             factor=0.5, min_lr=1e-8)
+
+early_stop = EarlyStopping(monitor='categorical_accuracy', min_delta=0,
+                           patience=5, verbose=1, mode='auto',
+                           baseline=0, restore_best_weights=True)
+
+initial_learning_rate = LR
+lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+    initial_learning_rate,
+    decay_steps=100000,
+    decay_rate=0.96,
+    staircase=True)
+
 
 # %%
 # MODEL DEFINITION
 model = Sequential()
 model.add(layers.Input(shape=(X_train.shape[1], X_train.shape[2])))
-#model.add(StringLookup(num_bins=3, mask_value=None, salt=None, output_mode="int", sparse=False))
-model.add(layers.LSTM(units=500 ))
-model.add(layers.Dense(num_classes, activation='sigmoid'))
+
+model.add(layers.LSTM(units=LAYERS[0],
+                      activation='tanh', recurrent_activation='hard_sigmoid',
+                      kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
+                      dropout=DP, recurrent_dropout=RDP,
+                      return_sequences=True, return_state=False,
+                      stateful=False, unroll=False))
+model.add(layers.BatchNormalization())
+model.add(layers.LSTM(units=LAYERS[1],
+                      activation='tanh', recurrent_activation='hard_sigmoid',
+                      kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
+                      dropout=DP, recurrent_dropout=RDP,
+                      return_sequences=True, return_state=False,
+                      stateful=False, unroll=False))
+model.add(layers.BatchNormalization())
+model.add(layers.LSTM(units=LAYERS[2],
+                      activation='tanh', recurrent_activation='hard_sigmoid',
+                      kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
+                      dropout=DP, recurrent_dropout=RDP,
+                      return_sequences=False, return_state=False,
+                      stateful=False, unroll=False))
+# model.add(layers.BatchNormalization())
+# model.add(layers.Dense(36, activation='relu'))
+# model.add(layers.BatchNormalization())
+# model.add(layers.Dense(36, activation='relu'))
+# model.add(layers.BatchNormalization())
+# model.add(layers.Dense(36, activation='relu'))
+# model.add(layers.BatchNormalization())
+# model.add(layers.Dense(36, activation='relu'))
+model.add(layers.BatchNormalization())
+model.add(layers.Dense(36, activation='softmax'))
+
+    opt = optimizers.Adam(learning_rate=LR,  clipnorm=1.)
 
 
 # %%
 # MODEL COMPILATION
-model.compile(loss='categorical_crossentropy', optimizer='Ftrl', metrics=['categorical_accuracy'])
+model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['categorical_accuracy'])
+
+print(model.summary())
 
 
 # %%
 # TRAINING
-history = model.fit(X_train, y_train, epochs=10, batch_size=32,verbose=2,validation_data=(X_test,y_test))
+history = model.fit(X_train, Y_train, epochs=EPOCH, batch_size=BATCH,
+                    shuffle=False,validation_data=(X_test, Y_test)
+                    ,callbacks=[early_stop
+                                ,lr_decay
+                                ,checkpoint
+                                ,tensorboard_callback]
+                    )
+
+
+#%% LOADING MODEL
+#@model = load_model('logs/fit/20230111-125954model.82-0.54.hdf5')
+
+
+# %%
+# EVALUATION
+train_loss, train_acc = model.evaluate(X_train, Y_train,
+                                       batch_size=M_TRAIN, verbose=0)
+test_loss, test_acc = model.evaluate(X_test[:M_TEST], Y_test[:M_TEST],
+                                     batch_size=M_TEST, verbose=0)
 
 
 # %%
 # ACCURACY AND LOSS PLOTS
-plt.plot(model.history.history['loss'])
-plt.plot(model.history.history['categorical_accuracy'])
+
+print(max(history.history['val_categorical_accuracy']))
+
+plt.plot(history.history['val_loss'])
+plt.plot(history.history['val_categorical_accuracy'])
 plt.title('Model loss and accuracy')
 plt.ylabel('Loss/Accuracy')
 plt.xlabel('Epoch')
@@ -154,39 +256,46 @@ plt.show()
 
 #%%
 # CONFUSION MATRIX
-y_pred = model.predict(X_test)
-y_pred_class = np.argmax(y_pred, axis=1)
-y_test_class = np.argmax(y_test, axis=1)
+oh_dict=dict(zip([i for i in range(num_classes)],list(sign_types_dict.keys())))
 
-confusion_matrix = confusion_matrix(y_test_class, y_pred_class)
-plt.imshow(confusion_matrix, cmap=plt.cm.Blues)
+y_pred = model.predict(X_test)
+y_int_pred_class = np.argmax(y_pred, axis=1)
+y_int_test_class = np.argmax(Y_test.values, axis=1)
+
+y_test_class = [oh_dict[i] for i in y_int_test_class]
+y_pred_class=[oh_dict[i] for i in y_int_pred_class]
+
+confusion_mat = confusion_matrix(y_test_class, y_pred_class, labels=list(sign_types_dict.keys()))
+plt.imshow(confusion_mat, cmap=plt.cm.Blues)
 plt.title('Confusion matrix')
 plt.colorbar()
 plt.xlabel('Predicted label')
 plt.ylabel('True label')
-plt.xticks([0, 1, 2], ['class 0', 'class 1', 'class 2'])
-plt.yticks([0, 1, 2], ['class 0', 'class 1', 'class 2'])
+plt.xticks([cl for cl in range(num_classes)], sign_types_dict.keys())
+plt.yticks([cl for cl in range(num_classes)], sign_types_dict.keys())
 plt.show()
 
+# tf.math.confusion_matrix(Y_test,y_pred)
+# #%%
+# # ROC PLOT
+# fpr = {}
+# tpr = {}
+# roc_auc = {}
+#
+# for i in range(3):
+#     fpr[i], tpr[i], _ = roc_curve(Y_test[:, i], y_pred[:, i])
+#     roc_auc[i] = auc(fpr[i], tpr[i])
+#
+# plt.figure()
+# for i in range(3):
+#     plt.plot(fpr[i], tpr[i], label='ROC curve for class {0} (area = {1:0.2f})'.format(i, roc_auc[i]))
+# plt.plot([0, 1], [0, 1], 'k--')
+# plt.xlim([0.0, 1.0])
+# plt.ylim([0.0, 1.0])
+# plt.xlabel('False Positive Rate')
+# plt.ylabel('True Positive Rate')
+# plt.title('ROC curves for all classes')
+# plt.legend(loc="lower right")
+# plt.show()
 
 #%%
-# ROC PLOT
-fpr = {}
-tpr = {}
-roc_auc = {}
-
-for i in range(3):
-    fpr[i], tpr[i], _ = roc_curve(y_test[:, i], y_pred[:, i])
-    roc_auc[i] = auc(fpr[i], tpr[i])
-
-plt.figure()
-for i in range(3):
-    plt.plot(fpr[i], tpr[i], label='ROC curve for class {0} (area = {1:0.2f})'.format(i, roc_auc[i]))
-plt.plot([0, 1], [0, 1], 'k--')
-plt.xlim([0.0, 1.0])
-plt.ylim([0.0, 1.0])
-plt.xlabel('False Positive Rate')
-plt.ylabel('True Positive Rate')
-plt.title('ROC curves for all classes')
-plt.legend(loc="lower right")
-plt.show()

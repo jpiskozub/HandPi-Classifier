@@ -124,3 +124,9 @@ dmypy.json
 .pyre/
 
 config.ini
+
+logs/
+
+checkpoints/
+
+gesty.csv
