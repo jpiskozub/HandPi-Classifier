@@ -130,3 +130,5 @@ logs/
 checkpoints/
 
 gesty.csv
+
+*.html
