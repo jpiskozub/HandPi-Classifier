@@ -209,7 +209,7 @@ model.add(layers.GRU(units=LAYERS[2],
 model.add(layers.BatchNormalization())
 model.add(layers.Dense(36, activation='softmax'))
 
-    opt = optimizers.Adam(learning_rate=LR,  clipnorm=1.)
+opt = optimizers.Adam(learning_rate=LR,  clipnorm=1.)
 
 
 # %%
