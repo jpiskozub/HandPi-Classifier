@@ -90,8 +90,12 @@ print(f'NaN containment:{df.isnull().any()}')
 for i in pd.unique(df['exam_id']):
 
     # TRUNCATING DATASETS
+    print(i)
     test_dframe = df.where(df['exam_id'] == i).dropna()
+    print(test_dframe.head())
     train_dframe = df.where(df['exam_id'] != i).dropna()
+    print(train_dframe.head())
+
 
     train_num_rows = train_dframe.shape[0] // SAMPLE_SIZE
     train_num_ts = train_num_rows * SAMPLE_SIZE
@@ -119,8 +123,11 @@ for i in pd.unique(df['exam_id']):
 
     X_train = np.reshape(X_train_scaled, (train_num_ts // SAMPLE_SIZE, SAMPLE_SIZE, X_train_scaled.shape[1]))
     X_test = np.reshape(X_test_scaled, (test_num_ts // SAMPLE_SIZE, SAMPLE_SIZE, X_test_scaled.shape[1]))
+    print(X_train[:10])
+    print(X_test[:10])
 
-    # SAVING DATASETS
+
+# SAVING DATASETS
     # train_dataset = tf.data.Dataset.from_tensor_slices((X_train_resh, Y_train_enc))
     # test_dataset = tf.data.Dataset.from_tensor_slices((X_test_resh, Y_test_enc))
 
@@ -133,7 +140,7 @@ for i in pd.unique(df['exam_id']):
     M_TEST = X_test.shape[0]  # number of test examples (2D),full=X_test.shape[0]
     N = X_train.shape[2]  # number of features
     BATCH = M_TRAIN //10   # batch size
-    EPOCH = 100  # number of epochs
+    EPOCH = 10  # number of epochs
     LR = 2e-3  # learning rate of the gradient descent
     LAMBD = 3e-2  # lambda in L2 regularizaion
     DP = 0.0  # dropout rate
@@ -171,56 +178,27 @@ for i in pd.unique(df['exam_id']):
     model = Sequential()
     model.add(layers.Input(shape=(X_train.shape[1], X_train.shape[2])))
 
-    model.add(layers.GRU(units=LAYERS[0],
+    model.add(layers.LSTM(units=LAYERS[0],
                          activation='tanh', recurrent_activation='hard_sigmoid',
                          kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
                          dropout=DP, recurrent_dropout=RDP,
                          return_sequences=True, return_state=False,
                          stateful=False, unroll=False))
     model.add(layers.BatchNormalization())
-    model.add(layers.GRU(units=LAYERS[1],
+    model.add(layers.LSTM(units=LAYERS[1],
                          activation='tanh', recurrent_activation='hard_sigmoid',
                          kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
                          dropout=DP, recurrent_dropout=RDP,
                          return_sequences=True, return_state=False,
                          stateful=False, unroll=False))
     model.add(layers.BatchNormalization())
-    model.add(layers.GRU(units=LAYERS[1],
-                         activation='tanh', recurrent_activation='hard_sigmoid',
-                         kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
-                         dropout=DP, recurrent_dropout=RDP,
-                         return_sequences=True, return_state=False,
-                         stateful=False, unroll=False))
-    model.add(layers.BatchNormalization())
-    model.add(layers.GRU(units=LAYERS[1],
-                     activation='tanh', recurrent_activation='hard_sigmoid',
-                     kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
-                     dropout=DP, recurrent_dropout=RDP,
-                     return_sequences=True, return_state=False,
-                     stateful=False, unroll=False))
-    model.add(layers.BatchNormalization())
-    model.add(layers.GRU(units=LAYERS[1],
-                     activation='tanh', recurrent_activation='hard_sigmoid',
-                     kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
-                     dropout=DP, recurrent_dropout=RDP,
-                     return_sequences=True, return_state=False,
-                     stateful=False, unroll=False))
-    model.add(layers.BatchNormalization())
-    model.add(layers.GRU(units=LAYERS[2],
+    model.add(layers.LSTM(units=LAYERS[2],
                          activation='tanh', recurrent_activation='hard_sigmoid',
                          kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
                          dropout=DP, recurrent_dropout=RDP,
                          return_sequences=False, return_state=False,
                          stateful=False, unroll=False))
 
-    # model.add(layers.BatchNormalization())
-    # model.add(layers.Dense(36, activation='softmax'))
-    # model.add(layers.BatchNormalization())
-    # model.add(layers.Dense(36, activation='softmax'))
-    # model.add(layers.BatchNormalization())
-    # model.add(layers.Dense(36, activation='softmax'))
-    # model.add(layers.BatchNormalization())
-    # model.add(layers.Dense(36, activation='softmax'))
     model.add(layers.BatchNormalization())
     model.add(layers.Dense(Y_test.shape[1], activation='softmax'))
 
