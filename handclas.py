@@ -85,7 +85,8 @@ SAMPLE_SIZE = 75
 
 # %%
 # LOADING
-df = pd.read_csv("gesty.csv")
+df = pd.read_csv("G:\Git_repos\HandPi-ETL\gesty.csv")
+df = df[df['exam_id'] != ('tt',15)]
 df.fillna(method='backfill', inplace=True)
 print(f'NaN containment:{df.isnull().any()}')
 num_rows = df.shape[0] // SAMPLE_SIZE
@@ -110,18 +111,19 @@ Y = Y_resh[:,1,:]
 Y_enc = pd.get_dummies(Y.flatten())
 
 
-# %%
-# CONVERTING & SCALING VALUES
-scaler = MinMaxScaler()
-X_scaled = scaler.fit_transform(x)
-X_scaled = tf.cast(X_scaled, dtype='float32')
 
-X_resh = np.reshape(X_scaled,(num_ts//SAMPLE_SIZE, SAMPLE_SIZE, X_scaled.shape[1]))
-
+X_resh = np.reshape(x,(num_ts//SAMPLE_SIZE, SAMPLE_SIZE, x.shape[1]))
 
 # %%
 # SPLITTING
-X_train, X_test, Y_train, Y_test = train_test_split(X_resh, Y_enc, test_size=0.2, random_state=0, stratify=Y)
+X_train_split, X_test_split, Y_train, Y_test = train_test_split(X_resh, Y_enc, test_size=0.2, random_state=0, stratify=Y)
+
+# %%
+# CONVERTING & SCALING VALUES
+scaler = MinMaxScaler()
+X_train = tf.cast(scaler.fit_transform(X_train_split.reshape(-1, X_train_split.shape[-1])).reshape(X_train_split.shape), dtype='float32')
+X_test = tf.cast(scaler.fit_transform(X_test_split.reshape(-1, X_test_split.shape[-1])).reshape(X_test_split.shape), dtype='float32')
+
 
 train_dataset = (X_train, Y_train)
 test_dataset = (X_test, Y_test)
