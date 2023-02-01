@@ -79,6 +79,7 @@ SAMPLE_SIZE = 75
 
 test_acc_list = []
 train_acc_list = []
+y_pred_list = []
 
 # %%
 # LOADING DATA
@@ -245,6 +246,7 @@ for i in pd.unique(df['exam_id']):
     oh_dict = dict(zip([i for i in range(num_classes)], list(sign_types_dict.keys())))
 
     y_pred = model.predict(X_test)
+    y_pred_list.append(y_pred)
     y_int_pred_class = np.argmax(y_pred, axis=1)
     y_int_test_class = np.argmax(Y_test.values, axis=1)
 
