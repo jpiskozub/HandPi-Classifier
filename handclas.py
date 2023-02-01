@@ -178,21 +178,21 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 model = Sequential()
 model.add(layers.Input(shape=(X_train.shape[1], X_train.shape[2])))
 
-model.add(layers.LSTM(units=LAYERS[0],
+model.add(layers.GRU(units=LAYERS[0],
                       activation='tanh', recurrent_activation='hard_sigmoid',
                       kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
                       dropout=DP, recurrent_dropout=RDP,
                       return_sequences=True, return_state=False,
                       stateful=False, unroll=False))
 model.add(layers.BatchNormalization())
-model.add(layers.LSTM(units=LAYERS[1],
+model.add(layers.GRU(units=LAYERS[1],
                       activation='tanh', recurrent_activation='hard_sigmoid',
                       kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
                       dropout=DP, recurrent_dropout=RDP,
                       return_sequences=True, return_state=False,
                       stateful=False, unroll=False))
 model.add(layers.BatchNormalization())
-model.add(layers.LSTM(units=LAYERS[2],
+model.add(layers.GRU(units=LAYERS[2],
                       activation='tanh', recurrent_activation='hard_sigmoid',
                       kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
                       dropout=DP, recurrent_dropout=RDP,
@@ -223,7 +223,8 @@ print(model.summary())
 # TRAINING
 history = model.fit(X_train, Y_train, epochs=EPOCH, batch_size=BATCH,
                     shuffle=False,validation_data=(X_test, Y_test)
-                    ,callbacks=[early_stop
+                    ,callbacks=[
+                                early_stop
                                 ,lr_decay
                                 ,checkpoint
                                 ,tensorboard_callback]
