@@ -122,7 +122,7 @@ X_train_split, X_test_split, Y_train, Y_test = train_test_split(X_resh, Y_enc, t
 # CONVERTING & SCALING VALUES
 scaler = MinMaxScaler()
 X_train = tf.cast(scaler.fit_transform(X_train_split.reshape(-1, X_train_split.shape[-1])).reshape(X_train_split.shape), dtype='float32')
-X_test = tf.cast(scaler.fit_transform(X_test_split.reshape(-1, X_test_split.shape[-1])).reshape(X_test_split.shape), dtype='float32')
+X_test = tf.cast(scaler.transform(X_test_split.reshape(-1, X_test_split.shape[-1])).reshape(X_test_split.shape), dtype='float32')
 
 
 train_dataset = (X_train, Y_train)
