@@ -132,3 +132,7 @@ checkpoints/
 gesty.csv
 
 *.html
+
+.idea/
+
+*.iml

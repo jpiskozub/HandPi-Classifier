@@ -90,8 +90,8 @@ print(f'NaN containment:{df.isnull().any()}')
 
 # %%
 # MODEL TRAINING WITH LEAVE-ONE-OUT CROSS VALIDATION OVER EACH SUBJECT
-for i in pd.unique(df['exam_id']):
-
+ for i in pd.unique(df['exam_id']):
+#     i = ('wd',1)
     # TRUNCATING DATASETS
     print(i)
     test_dframe = df.where(df['exam_id'] == i).dropna()
@@ -100,6 +100,8 @@ for i in pd.unique(df['exam_id']):
     print(train_dframe.head())
 
 
+
+    # %%
     train_num_rows = train_dframe.shape[0] // SAMPLE_SIZE
     train_num_ts = train_num_rows * SAMPLE_SIZE
 
@@ -112,23 +114,40 @@ for i in pd.unique(df['exam_id']):
     Y_test_dframe = test_dframe.iloc[:test_num_ts, 17].values
     num_classes = len(np.unique(df['sign']))
 
-    # CONVERTING & ENCODING LABELS
-    Y_train_resh = np.reshape(Y_train_dframe, (train_num_ts // SAMPLE_SIZE, SAMPLE_SIZE, 1))
-    Y_test_resh = np.reshape(Y_test_dframe, (test_num_ts // SAMPLE_SIZE, SAMPLE_SIZE, 1))
 
-    Y_train = pd.get_dummies(Y_train_resh[:, 1, :].flatten())
-    Y_test = pd.get_dummies(Y_test_resh[:, 1, :].flatten())
+    # %%
 
     # CONVERTING & SCALING VALUES
     scaler = MinMaxScaler()
     X_train_scaled = tf.cast(scaler.fit_transform(X_train_dframe), dtype='float32')
     X_test_scaled = tf.cast(scaler.fit_transform(X_test_dframe), dtype='float32')
 
-    X_train = np.reshape(X_train_scaled, (train_num_ts // SAMPLE_SIZE, SAMPLE_SIZE, X_train_scaled.shape[1]))
-    X_test = np.reshape(X_test_scaled, (test_num_ts // SAMPLE_SIZE, SAMPLE_SIZE, X_test_scaled.shape[1]))
-    print(X_train[:10])
-    print(X_test[:10])
 
+
+    X_train_resh = np.reshape(X_train_scaled, (train_num_ts // SAMPLE_SIZE, SAMPLE_SIZE, X_train_scaled.shape[1]))
+    X_test = np.reshape(X_test_scaled, (test_num_ts // SAMPLE_SIZE, SAMPLE_SIZE, X_test_scaled.shape[1]))
+
+
+    print(X_train_resh[:10])
+    print(X_test[:10])
+    # %%
+
+    # CONVERTING & ENCODING LABELS
+    Y_train_resh = np.reshape(Y_train_dframe, (train_num_ts // SAMPLE_SIZE, SAMPLE_SIZE, 1))
+    Y_test_resh = np.reshape(Y_test_dframe, (test_num_ts // SAMPLE_SIZE, SAMPLE_SIZE, 1))
+
+    # %%
+    X_train_indicies, X_val_indicies, Y_train_split, Y_val_split = train_test_split(list(range(X_train_resh.shape[0])),Y_train_resh[:,1,:], test_size=0.2, random_state=0, stratify=Y_train_resh[:,1,:])
+
+    # %%
+    Y_train = pd.get_dummies(Y_train_split.flatten())
+    Y_val = pd.get_dummies(Y_val_split.flatten())
+
+    Y_test = pd.get_dummies(Y_test_resh[:, 1, :].flatten())
+    # %%
+    X_train = X_train_resh[X_train_indicies,:,:]
+    X_val = X_train_resh[X_val_indicies,:,:]
+    # %%
 
     # SAVING DATASETS
     # train_dataset = tf.data.Dataset.from_tensor_slices((X_train_resh, Y_train_enc))
@@ -136,14 +155,16 @@ for i in pd.unique(df['exam_id']):
 
     train_dataset = (X_train, Y_train)
     test_dataset = (X_test, Y_test)
+    validation_dataset = (X_val,Y_val)
+    # %%
 
     # MODEL CONSTANTS
     LAYERS = np.dot(2, [75, 75, 75])  # number of units in hidden and output layers
     M_TRAIN = X_train.shape[0]  # number of training examples (2D)
     M_TEST = X_test.shape[0]  # number of test examples (2D),full=X_test.shape[0]
     N = X_train.shape[2]  # number of features
-    BATCH = M_TRAIN //10   # batch size
-    EPOCH = 10  # number of epochs
+    BATCH = M_TRAIN //100   # batch size
+    EPOCH = 100  # number of epochs
     LR = 2e-3  # learning rate of the gradient descent
     LAMBD = 3e-2  # lambda in L2 regularizaion
     DP = 0.0  # dropout rate
@@ -164,10 +185,10 @@ for i in pd.unique(df['exam_id']):
 
     lr_decay = ReduceLROnPlateau(monitor='loss',
                                  patience=1, verbose=1,
-                                 factor=0.5, min_lr=1e-8)
+                                 factor=0.5, min_lr=1e-6)
 
     early_stop = EarlyStopping(monitor='val_categorical_accuracy', min_delta=0,
-                               patience=5, verbose=1, mode='auto',
+                               patience=10, verbose=1, mode='auto',
                                baseline=0, restore_best_weights=True)
 
     initial_learning_rate = LR
@@ -181,21 +202,21 @@ for i in pd.unique(df['exam_id']):
     model = Sequential()
     model.add(layers.Input(shape=(X_train.shape[1], X_train.shape[2])))
 
-    model.add(layers.LSTM(units=LAYERS[0],
+    model.add(layers.GRU(units=LAYERS[0],
                           activation='tanh', recurrent_activation='hard_sigmoid',
                           kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
                           dropout=DP, recurrent_dropout=RDP,
                           return_sequences=True, return_state=False,
                           stateful=False, unroll=False))
     model.add(layers.BatchNormalization())
-    model.add(layers.LSTM(units=LAYERS[1],
+    model.add(layers.GRU(units=LAYERS[1],
                           activation='tanh', recurrent_activation='hard_sigmoid',
                           kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
                           dropout=DP, recurrent_dropout=RDP,
                           return_sequences=True, return_state=False,
                           stateful=False, unroll=False))
     model.add(layers.BatchNormalization())
-    model.add(layers.LSTM(units=LAYERS[2],
+    model.add(layers.GRU(units=LAYERS[2],
                           activation='tanh', recurrent_activation='hard_sigmoid',
                           kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
                           dropout=DP, recurrent_dropout=RDP,
@@ -214,11 +235,11 @@ for i in pd.unique(df['exam_id']):
 
     # TRAINING
     history = model.fit(X_train, Y_train, epochs=EPOCH, batch_size=BATCH,
-                        shuffle=False, validation_data=test_dataset
+                        shuffle=False, validation_data=validation_dataset
                         , callbacks=[
             lr_decay
             , checkpoint
-            #, early_stop
+            , early_stop
             , tensorboard_callback]
                         )
 
@@ -289,3 +310,5 @@ for i in pd.unique(df['exam_id']):
 # plt.show()
 
 # %%
+
+#%%
