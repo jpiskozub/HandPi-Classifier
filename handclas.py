@@ -1,3 +1,4 @@
+# %%
 
 import numpy as np
 import pandas as pd
@@ -83,17 +84,27 @@ sign_types_dict = {'a': sign_types[0],
 SAMPLE_SIZE = 75
 
 
-# %%
+#%%
 # LOADING
-df = pd.read_csv("G:\Git_repos\HandPi-ETL\gesty.csv")
+# df = pd.read_csv("G:\Git_repos\HandPi-ETL\gesty.csv")
+df = pd.read_csv("/mnt/g/Git_repos/HandPi-ETL/gesty.csv")
 df = df[df['exam_id'] != ('tt',15)]
+
+#%%
+# ADDING AUGMENTED DATA
+adf = pd.read_csv("/mnt/g/Git_repos/HandPi-ETL/gesty_aug.csv")
+adf.columns = df.columns[0:19]
+df = pd.concat([df, adf ], ignore_index=True)
+
+#%%
+# DATA CURING
 df.fillna(method='backfill', inplace=True)
 print(f'NaN containment:{df.isnull().any()}')
 num_rows = df.shape[0] // SAMPLE_SIZE
 num_ts = num_rows*SAMPLE_SIZE
 
 
-# %%
+#%%
 # DATA AND LABELS
 x = df.iloc[:num_ts,1:17].values
 y = df.iloc[:num_ts,17].values
@@ -116,17 +127,20 @@ X_resh = np.reshape(x,(num_ts//SAMPLE_SIZE, SAMPLE_SIZE, x.shape[1]))
 
 # %%
 # SPLITTING
-X_train_split, X_test_split, Y_train, Y_test = train_test_split(X_resh, Y_enc, test_size=0.2, random_state=0, stratify=Y)
+X_train, X_test, Y_train, Y_test = train_test_split(X_resh, Y_enc, test_size=0.2, random_state=0, stratify=Y)
+
+X_test, X_val, Y_test, Y_val = train_test_split(X_test, Y_test, test_size=0.2, random_state=0, stratify=Y_test)
 
 # %%
 # CONVERTING & SCALING VALUES
 scaler = MinMaxScaler()
-X_train = tf.cast(scaler.fit_transform(X_train_split.reshape(-1, X_train_split.shape[-1])).reshape(X_train_split.shape), dtype='float32')
-X_test = tf.cast(scaler.fit_transform(X_test_split.reshape(-1, X_test_split.shape[-1])).reshape(X_test_split.shape), dtype='float32')
+# X_train = tf.cast(scaler.fit_transform(X_train_split.reshape(-1, X_train_split.shape[-1])).reshape(X_train_split.shape), dtype='float32')
+# X_test = tf.cast(scaler.fit_transform(X_test_split.reshape(-1, X_test_split.shape[-1])).reshape(X_test_split.shape), dtype='float32')
 
 
 train_dataset = (X_train, Y_train)
 test_dataset = (X_test, Y_test)
+val_dataset = (X_val, Y_val)
 
 
 
@@ -136,7 +150,7 @@ test_dataset = (X_test, Y_test)
 
 # %%
 # MODEL CONSTANTS
-LAYERS = np.dot(2,[75, 75, 75])                # number of units in hidden and output layers
+LAYERS = np.dot(2,[75, 150, 150])                # number of units in hidden and output layers
 M_TRAIN = X_train.shape[0]                     # number of training examples (2D)
 M_TEST = X_test.shape[0]                       # number of test examples (2D),full=X_test.shape[0]
 N = X_train.shape[2]                           # number of features
@@ -144,8 +158,8 @@ BATCH = M_TRAIN//100                           # batch size
 EPOCH = 100                                    # number of epochs
 LR = 2e-3                          # learning rate of the gradient descent
 LAMBD = 3e-2                         # lambda in L2 regularizaion
-DP = 0.0                            # dropout rate
-RDP = 0.0                            # recurrent dropout rate
+DP = 0.5                           # dropout rate
+RDP = 0                           # recurrent dropout rate
 
 log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
@@ -162,7 +176,7 @@ lr_decay = ReduceLROnPlateau(monitor='loss',
                              factor=0.5, min_lr=1e-8)
 
 early_stop = EarlyStopping(monitor='categorical_accuracy', min_delta=0,
-                           patience=5, verbose=1, mode='auto',
+                           patience=7, verbose=1, mode='auto',
                            baseline=0, restore_best_weights=True)
 
 initial_learning_rate = LR
@@ -177,35 +191,47 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 # MODEL DEFINITION
 model = Sequential()
 model.add(layers.Input(shape=(X_train.shape[1], X_train.shape[2])))
+model.add(layers.BatchNormalization())
+model.add(layers.Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(75, 1)))
+model.add(layers.BatchNormalization())
+model.add(layers.Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(75, 1)))
+model.add(layers.BatchNormalization())
+model.add(layers.Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(75, 1)))
+model.add(layers.BatchNormalization())
 
 model.add(layers.GRU(units=LAYERS[0],
-                      activation='tanh', recurrent_activation='hard_sigmoid',
+                      activation='selu', recurrent_activation='hard_sigmoid',
                       kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
                       dropout=DP, recurrent_dropout=RDP,
                       return_sequences=True, return_state=False,
                       stateful=False, unroll=False))
 model.add(layers.BatchNormalization())
 model.add(layers.GRU(units=LAYERS[1],
-                      activation='tanh', recurrent_activation='hard_sigmoid',
+                      activation='selu', recurrent_activation='hard_sigmoid',
                       kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
                       dropout=DP, recurrent_dropout=RDP,
                       return_sequences=True, return_state=False,
                       stateful=False, unroll=False))
+# model.add(layers.GRU(units=LAYERS[1],
+#                       activation='selu', recurrent_activation='hard_sigmoid',
+#                       kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
+#                       dropout=DP, recurrent_dropout=RDP,
+#                       return_sequences=True, return_state=False,
+#                       stateful=False, unroll=False))
+# model.add(layers.GRU(units=LAYERS[1],
+#                       activation='selu', recurrent_activation='hard_sigmoid',
+#                       kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
+#                       dropout=DP, recurrent_dropout=RDP,
+#                       return_sequences=True, return_state=False,
+#                       stateful=False, unroll=False))
 model.add(layers.BatchNormalization())
 model.add(layers.GRU(units=LAYERS[2],
-                      activation='tanh', recurrent_activation='hard_sigmoid',
+                      activation='selu', recurrent_activation='hard_sigmoid',
                       kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
                       dropout=DP, recurrent_dropout=RDP,
                       return_sequences=False, return_state=False,
                       stateful=False, unroll=False))
-# model.add(layers.BatchNormalization())
-# model.add(layers.Dense(36, activation='relu'))
-# model.add(layers.BatchNormalization())
-# model.add(layers.Dense(36, activation='relu'))
-# model.add(layers.BatchNormalization())
-# model.add(layers.Dense(36, activation='relu'))
-# model.add(layers.BatchNormalization())
-# model.add(layers.Dense(36, activation='relu'))
+ 
 model.add(layers.BatchNormalization())
 model.add(layers.Dense(36, activation='softmax'))
 
@@ -222,8 +248,8 @@ print(model.summary())
 # %%
 # TRAINING
 history = model.fit(X_train, Y_train, epochs=EPOCH, batch_size=BATCH,
-                    shuffle=False,validation_data=(X_test, Y_test)
-                    ,callbacks=[
+                    shuffle=True,validation_data=val_dataset,
+                    callbacks=[
                                 early_stop
                                 ,lr_decay
                                 ,checkpoint
