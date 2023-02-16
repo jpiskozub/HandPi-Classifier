@@ -85,23 +85,30 @@ y_pred_list = []
 # LOADING DATA
 df = pd.read_csv("G:\Git_repos\HandPi-ETL\gesty.csv", converters={"exam_id": literal_eval})
 df = df[df['exam_id'] != 15]
+
+#%%
+# ADDING AUGMENTED DATA
+adf = pd.read_csv("G:\Git_repos\HandPi-ETL\gesty_aug.csv")
+adf.columns = df.columns[0:19]
+df = pd.concat([df, adf ], ignore_index=True)
+
 df.fillna(method='backfill', inplace=True)
 print(f'NaN containment:{df.isnull().any()}')
 
 # %%
 # MODEL TRAINING WITH LEAVE-ONE-OUT CROSS VALIDATION OVER EACH SUBJECT
- for i in pd.unique(df['exam_id']):
+for i in pd.unique(df['exam_id']):
 #     i = ('wd',1)
     # TRUNCATING DATASETS
     print(i)
     test_dframe = df.where(df['exam_id'] == i).dropna()
-    print(test_dframe.head())
+    #print(test_dframe.head())
     train_dframe = df.where(df['exam_id'] != i).dropna()
-    print(train_dframe.head())
+    #print(train_dframe.head())
 
 
 
-    # %%
+    ## %%
     train_num_rows = train_dframe.shape[0] // SAMPLE_SIZE
     train_num_ts = train_num_rows * SAMPLE_SIZE
 
@@ -115,39 +122,39 @@ print(f'NaN containment:{df.isnull().any()}')
     num_classes = len(np.unique(df['sign']))
 
 
-    # %%
+    ## %%
 
     # CONVERTING & SCALING VALUES
-    scaler = MinMaxScaler()
-    X_train_scaled = tf.cast(scaler.fit_transform(X_train_dframe), dtype='float32')
-    X_test_scaled = tf.cast(scaler.fit_transform(X_test_dframe), dtype='float32')
+    # scaler = MinMaxScaler()
+    # X_train_scaled = tf.cast(scaler.fit_transform(X_train_dframe), dtype='float32')
+    # X_test_scaled = tf.cast(scaler.fit_transform(X_test_dframe), dtype='float32')
 
 
 
-    X_train_resh = np.reshape(X_train_scaled, (train_num_ts // SAMPLE_SIZE, SAMPLE_SIZE, X_train_scaled.shape[1]))
-    X_test = np.reshape(X_test_scaled, (test_num_ts // SAMPLE_SIZE, SAMPLE_SIZE, X_test_scaled.shape[1]))
+    X_train_resh = np.reshape(X_train_dframe, (train_num_ts // SAMPLE_SIZE, SAMPLE_SIZE, X_train_dframe.shape[1]))
+    X_test = np.reshape(X_test_dframe, (test_num_ts // SAMPLE_SIZE, SAMPLE_SIZE, X_test_dframe.shape[1]))
 
 
-    print(X_train_resh[:10])
-    print(X_test[:10])
-    # %%
+    #print(X_train_resh[:10])
+    #print(X_test[:10])
+    ## %%
 
     # CONVERTING & ENCODING LABELS
     Y_train_resh = np.reshape(Y_train_dframe, (train_num_ts // SAMPLE_SIZE, SAMPLE_SIZE, 1))
     Y_test_resh = np.reshape(Y_test_dframe, (test_num_ts // SAMPLE_SIZE, SAMPLE_SIZE, 1))
 
-    # %%
+    ## %%
     X_train_indicies, X_val_indicies, Y_train_split, Y_val_split = train_test_split(list(range(X_train_resh.shape[0])),Y_train_resh[:,1,:], test_size=0.2, random_state=0, stratify=Y_train_resh[:,1,:])
 
-    # %%
+    ## %%
     Y_train = pd.get_dummies(Y_train_split.flatten())
     Y_val = pd.get_dummies(Y_val_split.flatten())
 
     Y_test = pd.get_dummies(Y_test_resh[:, 1, :].flatten())
-    # %%
+    ## %%
     X_train = X_train_resh[X_train_indicies,:,:]
     X_val = X_train_resh[X_val_indicies,:,:]
-    # %%
+    ## %%
 
     # SAVING DATASETS
     # train_dataset = tf.data.Dataset.from_tensor_slices((X_train_resh, Y_train_enc))
@@ -156,18 +163,18 @@ print(f'NaN containment:{df.isnull().any()}')
     train_dataset = (X_train, Y_train)
     test_dataset = (X_test, Y_test)
     validation_dataset = (X_val,Y_val)
-    # %%
+    ## %%
 
     # MODEL CONSTANTS
     LAYERS = np.dot(2, [75, 75, 75])  # number of units in hidden and output layers
     M_TRAIN = X_train.shape[0]  # number of training examples (2D)
     M_TEST = X_test.shape[0]  # number of test examples (2D),full=X_test.shape[0]
     N = X_train.shape[2]  # number of features
-    BATCH = M_TRAIN //100   # batch size
+    BATCH = M_TRAIN //1000   # batch size
     EPOCH = 100  # number of epochs
     LR = 2e-3  # learning rate of the gradient descent
     LAMBD = 3e-2  # lambda in L2 regularizaion
-    DP = 0.0  # dropout rate
+    DP = 0.5  # dropout rate
     RDP = 0.0  # recurrent dropout rate
 
     log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -201,6 +208,15 @@ print(f'NaN containment:{df.isnull().any()}')
     # MODEL DEFINITION
     model = Sequential()
     model.add(layers.Input(shape=(X_train.shape[1], X_train.shape[2])))
+    model.add(layers.BatchNormalization())
+    model.add(layers.Conv1D(filters=64, kernel_size=3, activation='selu', input_shape=(75, 1)))
+    model.add(layers.BatchNormalization())
+    model.add(layers.Conv1D(filters=64, kernel_size=3, activation='selu', input_shape=(75, 1)))
+    model.add(layers.BatchNormalization())
+    model.add(layers.Conv1D(filters=64, kernel_size=3, activation='selu', input_shape=(75, 1)))
+    model.add(layers.BatchNormalization())
+    model.add(layers.Conv1D(filters=64, kernel_size=3, activation='selu', input_shape=(75, 1)))
+    model.add(layers.BatchNormalization())
 
     model.add(layers.GRU(units=LAYERS[0],
                           activation='tanh', recurrent_activation='hard_sigmoid',
@@ -209,6 +225,8 @@ print(f'NaN containment:{df.isnull().any()}')
                           return_sequences=True, return_state=False,
                           stateful=False, unroll=False))
     model.add(layers.BatchNormalization())
+    model.add(layers.Conv1D(filters=64, kernel_size=3, activation='selu', input_shape=(75, 1)))
+    model.add(layers.BatchNormalization())
     model.add(layers.GRU(units=LAYERS[1],
                           activation='tanh', recurrent_activation='hard_sigmoid',
                           kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
@@ -216,15 +234,30 @@ print(f'NaN containment:{df.isnull().any()}')
                           return_sequences=True, return_state=False,
                           stateful=False, unroll=False))
     model.add(layers.BatchNormalization())
+    model.add(layers.Conv1D(filters=64, kernel_size=3, activation='selu', input_shape=(75, 1)))
+    model.add(layers.BatchNormalization())
+    # model.add(layers.GRU(units=LAYERS[1],
+    #                       activation='tanh', recurrent_activation='hard_sigmoid',
+    #                       kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
+    #                       dropout=DP, recurrent_dropout=RDP,
+    #                       return_sequences=True, return_state=False,
+    #                       stateful=False, unroll=False))
+    # model.add(layers.GRU(units=LAYERS[1],
+    #                       activation='tanh', recurrent_activation='hard_sigmoid',
+    #                       kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
+    #                       dropout=DP, recurrent_dropout=RDP,
+    #                       return_sequences=True, return_state=False,
+    #                       stateful=False, unroll=False))
+    model.add(layers.BatchNormalization())
     model.add(layers.GRU(units=LAYERS[2],
                           activation='tanh', recurrent_activation='hard_sigmoid',
                           kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
                           dropout=DP, recurrent_dropout=RDP,
                           return_sequences=False, return_state=False,
                           stateful=False, unroll=False))
-
+    
     model.add(layers.BatchNormalization())
-    model.add(layers.Dense(Y_test.shape[1], activation='softmax'))
+    model.add(layers.Dense(36, activation='softmax'))
 
     opt = optimizers.Adam(learning_rate=LR, clipnorm=1.)
 
