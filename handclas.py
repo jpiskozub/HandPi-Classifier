@@ -86,15 +86,17 @@ SAMPLE_SIZE = 75
 
 #%%
 # LOADING
-# df = pd.read_csv("G:\Git_repos\HandPi-ETL\gesty.csv")
-df = pd.read_csv("/mnt/g/Git_repos/HandPi-ETL/gesty.csv")
+df = pd.read_csv("G:\Git_repos\HandPi-ETL\gesty.csv")
+#df = pd.read_csv('G:/Git_repos/HandPi-ETL/wd_aug.csv')
+#df = pd.concat([df, pd.read_csv('G:/Git_repos/HandPi-ETL/wd.csv')], ignore_index=True )
+# df = pd.read_csv("/mnt/g/Git_repos/HandPi-ETL/gesty.csv")
 df = df[df['exam_id'] != ('tt',15)]
 
 #%%
 # ADDING AUGMENTED DATA
-adf = pd.read_csv("/mnt/g/Git_repos/HandPi-ETL/gesty_aug.csv")
-adf.columns = df.columns[0:19]
-df = pd.concat([df, adf ], ignore_index=True)
+# adf = pd.read_csv("/mnt/g/Git_repos/HandPi-ETL/gesty_aug.csv")
+# adf.columns = df.columns[0:19]
+# df = pd.concat([df, adf ], ignore_index=True)
 
 #%%
 # DATA CURING
@@ -150,7 +152,7 @@ val_dataset = (X_val, Y_val)
 
 # %%
 # MODEL CONSTANTS
-LAYERS = np.dot(2,[75, 150, 150])                # number of units in hidden and output layers
+LAYERS = np.dot(1,[75, 75, 75])                # number of units in hidden and output layers
 M_TRAIN = X_train.shape[0]                     # number of training examples (2D)
 M_TEST = X_test.shape[0]                       # number of test examples (2D),full=X_test.shape[0]
 N = X_train.shape[2]                           # number of features
@@ -173,7 +175,7 @@ checkpoint = ModelCheckpoint(filepath=log_dir+'/models/'+'model.{epoch:02d}-{val
 
 lr_decay = ReduceLROnPlateau(monitor='loss',
                              patience=1, verbose=1,
-                             factor=0.5, min_lr=1e-8)
+                             factor=0.5, min_lr=1e-6)
 
 early_stop = EarlyStopping(monitor='categorical_accuracy', min_delta=0,
                            patience=7, verbose=1, mode='auto',
@@ -192,12 +194,12 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 model = Sequential()
 model.add(layers.Input(shape=(X_train.shape[1], X_train.shape[2])))
 model.add(layers.BatchNormalization())
-model.add(layers.Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(75, 1)))
+model.add(layers.Conv1D(filters=64, kernel_size=3, activation='sigmoid', input_shape=(75, 1)))
 model.add(layers.BatchNormalization())
-model.add(layers.Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(75, 1)))
-model.add(layers.BatchNormalization())
-model.add(layers.Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(75, 1)))
-model.add(layers.BatchNormalization())
+# model.add(layers.Conv1D(filters=64, kernel_size=3, activation='selu', input_shape=(75, 1)))
+# model.add(layers.BatchNormalization())
+# model.add(layers.Conv1D(filters=64, kernel_size=3, activation='selu', input_shape=(75, 1)))
+# model.add(layers.BatchNormalization())
 
 model.add(layers.GRU(units=LAYERS[0],
                       activation='selu', recurrent_activation='hard_sigmoid',
@@ -206,12 +208,15 @@ model.add(layers.GRU(units=LAYERS[0],
                       return_sequences=True, return_state=False,
                       stateful=False, unroll=False))
 model.add(layers.BatchNormalization())
+model.add(layers.Conv1D(filters=64, kernel_size=3, activation='sigmoid', input_shape=(75, 1)))
+model.add(layers.BatchNormalization())
 model.add(layers.GRU(units=LAYERS[1],
                       activation='selu', recurrent_activation='hard_sigmoid',
                       kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
                       dropout=DP, recurrent_dropout=RDP,
                       return_sequences=True, return_state=False,
                       stateful=False, unroll=False))
+model.add(layers.Conv1D(filters=64, kernel_size=3, activation='sigmoid', input_shape=(75, 1)))
 # model.add(layers.GRU(units=LAYERS[1],
 #                       activation='selu', recurrent_activation='hard_sigmoid',
 #                       kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
