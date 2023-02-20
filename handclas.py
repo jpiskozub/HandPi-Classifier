@@ -84,13 +84,13 @@ y_pred_list = []
 # %%
 # LOADING DATA
 df = pd.read_csv("G:\Git_repos\HandPi-ETL\gesty.csv", converters={"exam_id": literal_eval})
-df = df[df['exam_id'] != 15]
+df = df[df['exam_id'] != ('tt',15)]
 
 #%%
 # ADDING AUGMENTED DATA
-adf = pd.read_csv("G:\Git_repos\HandPi-ETL\gesty_aug.csv")
-adf.columns = df.columns[0:19]
-df = pd.concat([df, adf ], ignore_index=True)
+# adf = pd.read_csv("G:\Git_repos\HandPi-ETL\gesty_aug.csv")
+# adf.columns = df.columns[0:19]
+# df = pd.concat([df, adf ], ignore_index=True)
 
 df.fillna(method='backfill', inplace=True)
 print(f'NaN containment:{df.isnull().any()}')
@@ -170,7 +170,7 @@ for i in pd.unique(df['exam_id']):
     M_TRAIN = X_train.shape[0]  # number of training examples (2D)
     M_TEST = X_test.shape[0]  # number of test examples (2D),full=X_test.shape[0]
     N = X_train.shape[2]  # number of features
-    BATCH = M_TRAIN //1000   # batch size
+    BATCH = M_TRAIN //100   # batch size
     EPOCH = 100  # number of epochs
     LR = 2e-3  # learning rate of the gradient descent
     LAMBD = 3e-2  # lambda in L2 regularizaion
@@ -280,6 +280,8 @@ for i in pd.unique(df['exam_id']):
                                            batch_size=M_TRAIN, verbose=0)
     test_loss, test_acc = model.evaluate(X_test,  Y_test,
                                          batch_size=M_TEST, verbose=0)
+    
+    print(test_acc)
 
     train_acc_list.append(train_acc)
     test_acc_list.append(test_acc)
