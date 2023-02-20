@@ -134,3 +134,19 @@ gesty.csv
 *.html
 
 .idea/
+
+acc_list.txt
+
+AzureML_job.txt
+
+azureml-examples/
+
+exam_id.txt
+
+handclares.ipynb
+
+handclas_loocv.ipynb
+
+handclas.ipynb
+
+test_acc_list.txt
