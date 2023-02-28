@@ -7,7 +7,6 @@ import datetime
 
 
 
-#import psycopg as psql
 
 import configparser
 
@@ -29,13 +28,11 @@ from tensorflow.keras.utils import timeseries_dataset_from_array, normalize
 
 
 
-config = configparser.ConfigParser()
-config.read('config.ini')
 
 
 
-devices = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_memory_growth(devices[0], True)
+
+
 # %%
 
 
@@ -86,13 +83,12 @@ SAMPLE_SIZE = 75
 
 #%%
 # LOADING
-df = pd.read_csv("G:\Git_repos\HandPi-ETL\gesty.csv")
-# df = pd.read_csv("/mnt/g/Git_repos/HandPi-ETL/gesty.csv")
+df = pd.read_csv("gesty.csv")
 df = df[df['exam_id'] != ('tt',15)]
 
 #%%
 # ADDING AUGMENTED DATA
-# adf = pd.read_csv("/mnt/g/Git_repos/HandPi-ETL/gesty_aug.csv")
+# adf = pd.read_csv("gesty_aug.csv")
 # adf.columns = df.columns[0:19]
 # df = pd.concat([df, adf ], ignore_index=True)
 
@@ -255,7 +251,7 @@ history = model.fit(X_train, Y_train, epochs=EPOCH, batch_size=BATCH,
                     callbacks=[
                                 early_stop
                                 ,lr_decay
-                                ,checkpoint
+                                #,checkpoint
                                 ,tensorboard_callback]
                     )
 

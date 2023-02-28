@@ -1,0 +1,16 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+#enter path to your script files
+code: G:\Git_repos\HandPi-Classifier\handclas.py
+#use scripts in Python, R, Java, Julia, C#. Here we have shown python
+command: python handclas.py --data ${{inputs.trainingData1}}
+# invoke completions (Ctrl+Space, Cmd+Space) to see the list of environments available
+environment: azureml:MLenv:1
+
+# invoke completions (Ctrl+Space, Cmd+Space) to see the list of computes available
+compute: azureml:StandardDS12
+# This defines the input data to mount. The names of the items in inputs can be referenced in the command
+inputs:
+  trainingData1:
+    type: uri_file
+    mode: ro_mount
+    path: G:\Git_repos\HandPi-Classifier\gesty.csv
