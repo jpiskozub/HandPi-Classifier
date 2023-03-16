@@ -11,8 +11,8 @@ import datetime
 
 import configparser
 
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
+from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import confusion_matrix, roc_curve, auc
 
 
@@ -129,185 +129,172 @@ X_resh = np.reshape(x,(num_ts//SAMPLE_SIZE, SAMPLE_SIZE, x.shape[1]))
 
 # %%
 # SPLITTING
-X_train, X_test, Y_train, Y_test = train_test_split(X_resh, Y_enc, test_size=0.2, random_state=0, stratify=Y)
 
-X_test, X_val, Y_test, Y_val = train_test_split(X_test, Y_test, test_size=0.2, random_state=0, stratify=Y_test)
+skf = StratifiedKFold(n_splits=5)
+skf.get_n_splits(X_resh, Y_enc)
 
-# %%
-# CONVERTING & SCALING VALUES
-scaler = MinMaxScaler()
-# X_train = tf.cast(scaler.fit_transform(X_train_split.reshape(-1, X_train_split.shape[-1])).reshape(X_train_split.shape), dtype='float32')
-# X_test = tf.cast(scaler.fit_transform(X_test_split.reshape(-1, X_test_split.shape[-1])).reshape(X_test_split.shape), dtype='float32')
+test_acc_list =[]
+train_acc_list = []
 
 
-train_dataset = (X_train, Y_train)
-test_dataset = (X_test, Y_test)
-val_dataset = (X_val, Y_val)
+for i, (train_index, test_index) in enumerate(skf.split(X_resh, Y)):
+
+    X_test1 = X_resh[test_index]
+    X_train = X_resh[train_index]
+    Y_train = Y_enc.iloc[train_index]
+    Y_test1 =Y_enc.iloc[test_index]
+
+    X_test, X_val, Y_test, Y_val = train_test_split(X_test1, Y_test1, test_size=0.2, random_state=0, stratify=Y_test1)
+
+
+
+    train_dataset = (X_train, Y_train)
+    test_dataset = (X_test, Y_test)
+    val_dataset = (X_val, Y_val)
 
 
 
 #train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train))
 #test_dataset = tf.data.Dataset.from_tensor_slices((X_test, y_test))
 
+## MODEL CONSTANTS
+    LAYERS = np.dot(1,[75, 75, 75])                # number of units in hidden and output layers
+    M_TRAIN = X_train.shape[0]                     # number of training examples (2D)
+    M_TEST = X_test.shape[0]                       # number of test examples (2D),full=X_test.shape[0]
+    N = X_train.shape[2]                           # number of features
+    BATCH = M_TRAIN//100                           # batch size
+    EPOCH = 100                                    # number of epochs
+    LR = 2e-3                          # learning rate of the gradient descent
+    LAMBD = 3e-2                         # lambda in L2 regularizaion
+    DP = 0.5                           # dropout rate
+    RDP = 0                           # recurrent dropout rate
 
-# %%
-# MODEL CONSTANTS
-LAYERS = np.dot(1,[75, 75, 75])                # number of units in hidden and output layers
-M_TRAIN = X_train.shape[0]                     # number of training examples (2D)
-M_TEST = X_test.shape[0]                       # number of test examples (2D),full=X_test.shape[0]
-N = X_train.shape[2]                           # number of features
-BATCH = M_TRAIN//100                           # batch size
-EPOCH = 100                                    # number of epochs
-LR = 2e-3                          # learning rate of the gradient descent
-LAMBD = 3e-2                         # lambda in L2 regularizaion
-DP = 0.5                           # dropout rate
-RDP = 0                           # recurrent dropout rate
+    log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
 
-log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+    checkpoint = ModelCheckpoint(filepath=log_dir+'/models/'+'model.{epoch:02d}-{val_categorical_accuracy:.2f}.hdf5',
+                                 monitor='val_categorical_accuracy',
+                                 verbose=1,
+                                 save_best_only=True,
+                                 save_weights_only=False,
+                                 mode='max')
 
-checkpoint = ModelCheckpoint(filepath=log_dir+'/models/'+'model.{epoch:02d}-{val_categorical_accuracy:.2f}.hdf5',
-                             monitor='val_categorical_accuracy',
-                             verbose=1,
-                             save_best_only=True,
-                             save_weights_only=False,
-                             mode='max')
+    lr_decay = ReduceLROnPlateau(monitor='loss',
+                                 patience=1, verbose=1,
+                                 factor=0.5, min_lr=1e-6)
 
-lr_decay = ReduceLROnPlateau(monitor='loss',
-                             patience=1, verbose=1,
-                             factor=0.5, min_lr=1e-6)
+    early_stop = EarlyStopping(monitor='categorical_accuracy', min_delta=0,
+                               patience=7, verbose=1, mode='auto',
+                               baseline=0, restore_best_weights=True)
 
-early_stop = EarlyStopping(monitor='categorical_accuracy', min_delta=0,
-                           patience=7, verbose=1, mode='auto',
-                           baseline=0, restore_best_weights=True)
-
-initial_learning_rate = LR
-lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-    initial_learning_rate,
-    decay_steps=100000,
-    decay_rate=0.96,
-    staircase=True)
+    initial_learning_rate = LR
+    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+        initial_learning_rate,
+        decay_steps=100000,
+        decay_rate=0.96,
+        staircase=True)
 
 
-# %%
-# MODEL DEFINITION
-model = Sequential()
-model.add(layers.Input(shape=(X_train.shape[1], X_train.shape[2])))
-model.add(layers.BatchNormalization())
-model.add(layers.Conv1D(filters=64, kernel_size=3, activation='sigmoid', input_shape=(75, 1)))
-model.add(layers.BatchNormalization())
-# model.add(layers.Conv1D(filters=64, kernel_size=3, activation='selu', input_shape=(75, 1)))
-# model.add(layers.BatchNormalization())
-# model.add(layers.Conv1D(filters=64, kernel_size=3, activation='selu', input_shape=(75, 1)))
-# model.add(layers.BatchNormalization())
+    # MODEL DEFINITION
+    model = Sequential()
+    model.add(layers.Input(shape=(X_train.shape[1], X_train.shape[2])))
+    model.add(layers.BatchNormalization())
+    model.add(layers.Conv1D(filters=64, kernel_size=3, activation='sigmoid', input_shape=(75, 1)))
+    model.add(layers.BatchNormalization())
+    model.add(layers.GRU(units=LAYERS[0],
+                          activation='selu', recurrent_activation='hard_sigmoid',
+                          kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
+                          dropout=DP, recurrent_dropout=RDP,
+                          return_sequences=True, return_state=False,
+                          stateful=False, unroll=False))
+    model.add(layers.BatchNormalization())
+    model.add(layers.Conv1D(filters=64, kernel_size=3, activation='sigmoid', input_shape=(75, 1)))
+    model.add(layers.BatchNormalization())
+    model.add(layers.GRU(units=LAYERS[1],
+                          activation='selu', recurrent_activation='hard_sigmoid',
+                          kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
+                          dropout=DP, recurrent_dropout=RDP,
+                          return_sequences=True, return_state=False,
+                          stateful=False, unroll=False))
+    model.add(layers.Conv1D(filters=64, kernel_size=3, activation='sigmoid', input_shape=(75, 1)))
+    model.add(layers.BatchNormalization())
+    model.add(layers.GRU(units=LAYERS[2],
+                          activation='selu', recurrent_activation='hard_sigmoid',
+                          kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
+                          dropout=DP, recurrent_dropout=RDP,
+                          return_sequences=False, return_state=False,
+                          stateful=False, unroll=False))
+    
+    model.add(layers.BatchNormalization())
+    model.add(layers.Dense(36, activation='softmax'))
 
-model.add(layers.GRU(units=LAYERS[0],
-                      activation='selu', recurrent_activation='hard_sigmoid',
-                      kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
-                      dropout=DP, recurrent_dropout=RDP,
-                      return_sequences=True, return_state=False,
-                      stateful=False, unroll=False))
-model.add(layers.BatchNormalization())
-model.add(layers.Conv1D(filters=64, kernel_size=3, activation='sigmoid', input_shape=(75, 1)))
-model.add(layers.BatchNormalization())
-model.add(layers.GRU(units=LAYERS[1],
-                      activation='selu', recurrent_activation='hard_sigmoid',
-                      kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
-                      dropout=DP, recurrent_dropout=RDP,
-                      return_sequences=True, return_state=False,
-                      stateful=False, unroll=False))
-model.add(layers.Conv1D(filters=64, kernel_size=3, activation='sigmoid', input_shape=(75, 1)))
-# model.add(layers.GRU(units=LAYERS[1],
-#                       activation='selu', recurrent_activation='hard_sigmoid',
-#                       kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
-#                       dropout=DP, recurrent_dropout=RDP,
-#                       return_sequences=True, return_state=False,
-#                       stateful=False, unroll=False))
-# model.add(layers.GRU(units=LAYERS[1],
-#                       activation='selu', recurrent_activation='hard_sigmoid',
-#                       kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
-#                       dropout=DP, recurrent_dropout=RDP,
-#                       return_sequences=True, return_state=False,
-#                       stateful=False, unroll=False))
-model.add(layers.BatchNormalization())
-model.add(layers.GRU(units=LAYERS[2],
-                      activation='selu', recurrent_activation='hard_sigmoid',
-                      kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
-                      dropout=DP, recurrent_dropout=RDP,
-                      return_sequences=False, return_state=False,
-                      stateful=False, unroll=False))
- 
-model.add(layers.BatchNormalization())
-model.add(layers.Dense(36, activation='softmax'))
-
-opt = optimizers.Adam(learning_rate=LR,  clipnorm=1.)
+    opt = optimizers.Adam(learning_rate=LR,  clipnorm=1.)
 
 
-# %%
-# MODEL COMPILATION
-model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['categorical_accuracy'])
 
-print(model.summary())
+    # MODEL COMPILATION
+    model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['categorical_accuracy'])
 
-
-# %%
-# TRAINING
-history = model.fit(X_train, Y_train, epochs=EPOCH, batch_size=BATCH,
-                    shuffle=True,validation_data=val_dataset,
-                    callbacks=[
-                                early_stop
-                                ,lr_decay
-                                ,checkpoint
-                                ,tensorboard_callback]
-                    )
+    print(model.summary())
 
 
-#%% LOADING MODEL
-#@model = load_model('logs/fit/20230111-125954model.82-0.54.hdf5')
+    # TRAINING
+    history = model.fit(X_train, Y_train, epochs=EPOCH, batch_size=BATCH,
+                        shuffle=True,validation_data=val_dataset,
+                        callbacks=[
+                                    early_stop
+                                    ,lr_decay
+                                    ,checkpoint
+                                    ,tensorboard_callback]
+                        )
 
 
-# %%
-# EVALUATION
-train_loss, train_acc = model.evaluate(X_train, Y_train,
-                                       batch_size=M_TRAIN, verbose=0)
-test_loss, test_acc = model.evaluate(X_test[:M_TEST], Y_test[:M_TEST],
-                                     batch_size=M_TEST, verbose=0)
 
 
-# %%
-# ACCURACY AND LOSS PLOTS
-
-print(max(history.history['val_categorical_accuracy']))
-
-plt.plot(history.history['val_loss'])
-plt.plot(history.history['val_categorical_accuracy'])
-plt.title('Model loss and accuracy')
-plt.ylabel('Loss/Accuracy')
-plt.xlabel('Epoch')
-plt.legend(['Loss', 'Accuracy'], loc='upper left')
-plt.show()
 
 
-#%%
-# CONFUSION MATRIX
-oh_dict=dict(zip([i for i in range(num_classes)],list(sign_types_dict.keys())))
+    # EVALUATION
+    train_loss, train_acc = model.evaluate(X_train, Y_train,
+                                           batch_size=M_TRAIN, verbose=0)
+    test_loss, test_acc = model.evaluate(X_test, Y_test,
+                                         batch_size=M_TEST, verbose=0)
 
-y_pred = model.predict(X_test)
-y_int_pred_class = np.argmax(y_pred, axis=1)
-y_int_test_class = np.argmax(Y_test.values, axis=1)
+    test_acc_list.append(test_acc)
+    train_acc_list.append(train_acc)
 
-y_test_class = [oh_dict[i] for i in y_int_test_class]
-y_pred_class=[oh_dict[i] for i in y_int_pred_class]
+    # ACCURACY AND LOSS PLOTS
 
-confusion_mat = confusion_matrix(y_test_class, y_pred_class, labels=list(sign_types_dict.keys()))
-plt.imshow(confusion_mat, cmap=plt.cm.Blues)
-plt.title('Confusion matrix')
-plt.colorbar()
-plt.xlabel('Predicted label')
-plt.ylabel('True label')
-plt.xticks([cl for cl in range(num_classes)], sign_types_dict.keys())
-plt.yticks([cl for cl in range(num_classes)], sign_types_dict.keys())
-plt.show()
+    print(max(history.history['val_categorical_accuracy']))
+
+    plt.plot(history.history['val_loss'])
+    plt.plot(history.history['val_categorical_accuracy'])
+    plt.title('Model loss and accuracy')
+    plt.ylabel('Loss/Accuracy')
+    plt.xlabel('Epoch')
+    plt.legend(['Loss', 'Accuracy'], loc='upper left')
+    plt.show()
+
+
+
+    # CONFUSION MATRIX
+    oh_dict=dict(zip([i for i in range(num_classes)],list(sign_types_dict.keys())))
+
+    y_pred = model.predict(X_test)
+    y_int_pred_class = np.argmax(y_pred, axis=1)
+    y_int_test_class = np.argmax(Y_test.values, axis=1)
+
+    y_test_class = [oh_dict[i] for i in y_int_test_class]
+    y_pred_class=[oh_dict[i] for i in y_int_pred_class]
+
+    confusion_mat = confusion_matrix(y_test_class, y_pred_class, labels=list(sign_types_dict.keys()))
+    plt.imshow(confusion_mat, cmap=plt.cm.Blues)
+    plt.title('Confusion matrix')
+    plt.colorbar()
+    plt.xlabel('Predicted label')
+    plt.ylabel('True label')
+    plt.xticks([cl for cl in range(num_classes)], sign_types_dict.keys())
+    plt.yticks([cl for cl in range(num_classes)], sign_types_dict.keys())
+    plt.show()
 
 # tf.math.confusion_matrix(Y_test,y_pred)
 # #%%
