@@ -100,7 +100,8 @@ df = pd.concat([df, adf ], ignore_index=True)
 
 #%%
 # FEATURE SELECTION
-df = df.drop(['P1_1', 'P2_1', 'P3_1', 'P4_1', 'P4_2', 'P5_1', 'P5_2'], axis=1)
+droplist = ['P1_1', 'P2_1', 'P3_1', 'P4_1', 'P4_2', 'P5_1', 'P5_2'] + IMU_channels
+df = df.drop(droplist, axis=1)
 
 #%%
 # DATA CURING
@@ -112,7 +113,7 @@ num_ts = num_rows*SAMPLE_SIZE
 
 #%%
 # DATA AND LABELS
-x = df.iloc[:num_ts,1:10].values
+x = df.iloc[:num_ts,1:(df.shape[1]-3)].values
 y = df['sign'].values
 
 num_classes = len(np.unique(y))
