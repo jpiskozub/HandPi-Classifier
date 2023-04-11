@@ -1,4 +1,5 @@
-# %%
+# %% 
+# LOADING MODULES
 
 import numpy as np
 import pandas as pd
@@ -7,7 +8,6 @@ import datetime
 
 
 
-#import psycopg as psql
 
 import configparser
 
@@ -15,17 +15,15 @@ from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import confusion_matrix, roc_curve, auc, ConfusionMatrixDisplay
 
-
-from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras import layers, optimizers
-from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, EarlyStopping, TensorBoard
 import tensorflow as tf
 
-
+from keras import layers, optimizers
+from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, EarlyStopping, TensorBoard
 from keras.regularizers import l2
+from keras.utils import timeseries_dataset_from_array, normalize
 
 
-from tensorflow.keras.utils import timeseries_dataset_from_array, normalize
+from scikeras.wrappers import KerasClassifier
 
 
 
@@ -36,7 +34,8 @@ config.read('config.ini')
 
 devices = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_memory_growth(devices[0], True)
-# %%
+# %% 
+# CONSTANTS
 
 
 ADC_channels = ['P1_1', 'P1_2', 'P2_1', 'P2_2', 'P3_1', 'P3_2', 'P4_1', 'P4_2', 'P5_1', 'P5_2']
@@ -82,6 +81,82 @@ sign_types_dict = {'a': sign_types[0],
 
 
 SAMPLE_SIZE = 75
+
+#%%
+## MODEL CONSTANTS
+    LAYERS = np.dot(1,[75, 75, 75])                # number of units in hidden and output layers
+    M_TRAIN = X_train.shape[0]                     # number of training examples (2D)
+    M_TEST = X_test.shape[0]                       # number of test examples (2D),full=X_test.shape[0]
+    N = X_train.shape[2]                           # number of features
+    BATCH = 256                                    # batch size
+    EPOCH = 100                                    # number of epochs
+    LR = 2e-3                          # learning rate of the gradient descent
+    LAMBD = 3e-2                         # lambda in L2 regularizaion
+    DP = 0.5                           # dropout rate
+    RDP = 0                           # recurrent dropout rate
+
+    log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+
+    checkpoint = ModelCheckpoint(filepath=log_dir+'/models/'+'model.{epoch:02d}-{val_categorical_accuracy:.2f}.hdf5',
+                                 monitor='val_categorical_accuracy',
+                                 verbose=1,
+                                 save_best_only=True,
+                                 save_weights_only=False,
+                                 mode='max')
+
+    lr_decay = ReduceLROnPlateau(monitor='loss',
+                                 patience=1, verbose=1,
+                                 factor=0.5, min_lr=1e-6)
+
+    early_stop = EarlyStopping(monitor='categorical_accuracy', min_delta=0,
+                               patience=7, verbose=1, mode='auto',
+                               baseline=0, restore_best_weights=True)
+
+    initial_learning_rate = LR
+    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+        initial_learning_rate,
+        decay_steps=100000,
+        decay_rate=0.96,
+        staircase=True)
+
+def get_model(hidden_layer_dim, meta):
+    n_features_in_ = meta["n_features_in_"]
+    X_shape_ = meta["X_shape_"]
+    n_classes_ = meta["n_classes_"]
+    
+    model = Sequential()
+    model.add(layers.Input(shape=(X_train.shape[1], X_train.shape[2])))
+    model.add(layers.BatchNormalization())
+    model.add(layers.Conv1D(filters=64, kernel_size=3, activation='sigmoid', input_shape=(75, 1)))
+    model.add(layers.BatchNormalization())
+    model.add(layers.GRU(units=LAYERS[0],
+                          activation='selu', recurrent_activation='hard_sigmoid',
+                          kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
+                          dropout=DP, recurrent_dropout=RDP,
+                          return_sequences=True, return_state=False,
+                          stateful=False, unroll=False))
+    model.add(layers.BatchNormalization())
+    model.add(layers.Conv1D(filters=64, kernel_size=3, activation='sigmoid', input_shape=(75, 1)))
+    model.add(layers.BatchNormalization())
+    model.add(layers.GRU(units=LAYERS[1],
+                          activation='selu', recurrent_activation='hard_sigmoid',
+                          kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
+                          dropout=DP, recurrent_dropout=RDP,
+                          return_sequences=True, return_state=False,
+                          stateful=False, unroll=False))
+    model.add(layers.Conv1D(filters=64, kernel_size=3, activation='sigmoid', input_shape=(75, 1)))
+    model.add(layers.BatchNormalization())
+    model.add(layers.GRU(units=LAYERS[2],
+                          activation='selu', recurrent_activation='hard_sigmoid',
+                          kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
+                          dropout=DP, recurrent_dropout=RDP,
+                          return_sequences=False, return_state=False,
+                          stateful=False, unroll=False))
+    
+    model.add(layers.BatchNormalization())
+    model.add(layers.Dense(36, activation='softmax'))
+    return model
 
 
 #%%
@@ -164,76 +239,11 @@ for i, (train_index, test_index) in enumerate(skf.split(X_resh, Y)):
 #train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train))
 #test_dataset = tf.data.Dataset.from_tensor_slices((X_test, y_test))
 
-## MODEL CONSTANTS
-    LAYERS = np.dot(1,[75, 75, 75])                # number of units in hidden and output layers
-    M_TRAIN = X_train.shape[0]                     # number of training examples (2D)
-    M_TEST = X_test.shape[0]                       # number of test examples (2D),full=X_test.shape[0]
-    N = X_train.shape[2]                           # number of features
-    BATCH = 256                                    # batch size
-    EPOCH = 100                                    # number of epochs
-    LR = 2e-3                          # learning rate of the gradient descent
-    LAMBD = 3e-2                         # lambda in L2 regularizaion
-    DP = 0.5                           # dropout rate
-    RDP = 0                           # recurrent dropout rate
 
-    log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
-
-    checkpoint = ModelCheckpoint(filepath=log_dir+'/models/'+'model.{epoch:02d}-{val_categorical_accuracy:.2f}.hdf5',
-                                 monitor='val_categorical_accuracy',
-                                 verbose=1,
-                                 save_best_only=True,
-                                 save_weights_only=False,
-                                 mode='max')
-
-    lr_decay = ReduceLROnPlateau(monitor='loss',
-                                 patience=1, verbose=1,
-                                 factor=0.5, min_lr=1e-6)
-
-    early_stop = EarlyStopping(monitor='categorical_accuracy', min_delta=0,
-                               patience=7, verbose=1, mode='auto',
-                               baseline=0, restore_best_weights=True)
-
-    initial_learning_rate = LR
-    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-        initial_learning_rate,
-        decay_steps=100000,
-        decay_rate=0.96,
-        staircase=True)
 
 
     # MODEL DEFINITION
-    model = Sequential()
-    model.add(layers.Input(shape=(X_train.shape[1], X_train.shape[2])))
-    model.add(layers.BatchNormalization())
-    model.add(layers.Conv1D(filters=64, kernel_size=3, activation='sigmoid', input_shape=(75, 1)))
-    model.add(layers.BatchNormalization())
-    model.add(layers.GRU(units=LAYERS[0],
-                          activation='selu', recurrent_activation='hard_sigmoid',
-                          kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
-                          dropout=DP, recurrent_dropout=RDP,
-                          return_sequences=True, return_state=False,
-                          stateful=False, unroll=False))
-    model.add(layers.BatchNormalization())
-    model.add(layers.Conv1D(filters=64, kernel_size=3, activation='sigmoid', input_shape=(75, 1)))
-    model.add(layers.BatchNormalization())
-    model.add(layers.GRU(units=LAYERS[1],
-                          activation='selu', recurrent_activation='hard_sigmoid',
-                          kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
-                          dropout=DP, recurrent_dropout=RDP,
-                          return_sequences=True, return_state=False,
-                          stateful=False, unroll=False))
-    model.add(layers.Conv1D(filters=64, kernel_size=3, activation='sigmoid', input_shape=(75, 1)))
-    model.add(layers.BatchNormalization())
-    model.add(layers.GRU(units=LAYERS[2],
-                          activation='selu', recurrent_activation='hard_sigmoid',
-                          kernel_regularizer=l2(LAMBD), recurrent_regularizer=l2(LAMBD),
-                          dropout=DP, recurrent_dropout=RDP,
-                          return_sequences=False, return_state=False,
-                          stateful=False, unroll=False))
-    
-    model.add(layers.BatchNormalization())
-    model.add(layers.Dense(36, activation='softmax'))
+
 
     opt = optimizers.Adam(learning_rate=LR,  clipnorm=1.)
 
