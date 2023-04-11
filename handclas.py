@@ -87,16 +87,20 @@ SAMPLE_SIZE = 75
 #%%
 # LOADING
 #df = pd.read_csv("G:\Git_repos\HandPi-ETL\gesty.csv")
-df = pd.read_csv('G:/Git_repos/HandPi-ETL/gesty_pp_aug.csv')
-df = pd.concat([df, pd.read_csv('G:/Git_repos/HandPi-ETL/gesty_pp.csv')], ignore_index=True )
-# df = pd.read_csv("/mnt/g/Git_repos/HandPi-ETL/gesty.csv")
+# df = pd.read_csv('G:/Git_repos/HandPi-ETL/gesty_pp_aug.csv')
+# df = pd.concat([df, pd.read_csv('G:/Git_repos/HandPi-ETL/gesty_pp.csv')], ignore_index=True )
+df = pd.read_csv("/mnt/g/Git_repos/HandPi-ETL/gesty_pp.csv")
 df = df[df['exam_id'] != ('tt',15)]
 
 #%%
 # ADDING AUGMENTED DATA
-# adf = pd.read_csv("/mnt/g/Git_repos/HandPi-ETL/gesty_aug.csv")
-# adf.columns = df.columns[0:19]
-# df = pd.concat([df, adf ], ignore_index=True)
+adf = pd.read_csv("/mnt/g/Git_repos/HandPi-ETL/gesty_pp_aug.csv")
+adf.columns = df.columns[0:19]
+df = pd.concat([df, adf ], ignore_index=True)
+
+#%%
+# FEATURE SELECTION
+df = df.drop(['P1_1', 'P2_1', 'P3_1', 'P4_1', 'P4_2', 'P5_1', 'P5_2'], axis=1)
 
 #%%
 # DATA CURING
@@ -108,8 +112,8 @@ num_ts = num_rows*SAMPLE_SIZE
 
 #%%
 # DATA AND LABELS
-x = df.iloc[:num_ts,1:17].values
-y = df.iloc[:num_ts,17].values
+x = df.iloc[:num_ts,1:10].values
+y = df['sign'].values
 
 num_classes = len(np.unique(y))
 
