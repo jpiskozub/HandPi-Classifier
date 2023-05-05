@@ -14,6 +14,8 @@ import configparser
 from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import confusion_matrix, roc_curve, auc, ConfusionMatrixDisplay
+from sklearn.metrics import classification_report
+
 
 
 from tensorflow.keras.models import Sequential, load_model
@@ -100,8 +102,8 @@ df = pd.concat([df, adf ], ignore_index=True)
 
 #%%
 # FEATURE SELECTION
-droplist = ['P1_1', 'P2_1', 'P3_1', 'P4_1', 'P4_2', 'P5_1', 'P5_2'] + IMU_channels
-df = df.drop(droplist, axis=1)
+# droplist = ['P1_1', 'P2_1', 'P3_1', 'P4_1', 'P4_2', 'P5_1', 'P5_2'] + IMU_channels
+# df = df.drop(droplist, axis=1)
 
 #%%
 # DATA CURING
@@ -175,7 +177,7 @@ for i, (train_index, test_index) in enumerate(skf.split(X_resh, Y)):
     M_TEST = X_test.shape[0]                       # number of test examples (2D),full=X_test.shape[0]
     N = X_train.shape[2]                           # number of features
     BATCH = 256                                    # batch size
-    EPOCH = 100                                    # number of epochs
+    EPOCH = 60                                   # number of epochs
     LR = 2e-3                          # learning rate of the gradient descent
     LAMBD = 3e-2                         # lambda in L2 regularizaion
     DP = 0.5                           # dropout rate
@@ -340,3 +342,5 @@ cmap = 'PuRd'
 # plt.show()
 
 #%%
+#CLASSIFICATION REPORT
+print(classification_report(y_test_class, y_pred_class, labels=list(sign_types_dict.keys())))
