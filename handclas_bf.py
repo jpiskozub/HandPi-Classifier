@@ -92,13 +92,13 @@ SAMPLE_SIZE = 75
 #df = pd.read_csv("G:\Git_repos\HandPi-ETL\gesty.csv")
 #df = pd.read_csv('G:/Git_repos/HandPi-ETL/wd_aug.csv')
 #df = pd.concat([df, pd.read_csv('G:/Git_repos/HandPi-ETL/wd.csv')], ignore_index=True )
-df = pd.read_csv("/mnt/g/Git_repos/HandPi-ETL/gesty.csv")
+df = pd.read_csv("/mnt/g/Git_repos/HandPi-ETL/gesty_pp.csv")
 df = df[df['exam_id'] != ('tt',15)]
 
 
 # %%
 # ADDING AUGMENTED DATA
-adf = pd.read_csv("/mnt/g/Git_repos/HandPi-ETL/gesty_aug.csv")
+adf = pd.read_csv("/mnt/g/Git_repos/HandPi-ETL/gesty_pp_aug.csv")
 adf.columns = df.columns[0:19]
 df = pd.concat([df, adf ], ignore_index=True)
 
@@ -122,7 +122,6 @@ for n in range(3,4):
 
 
 
-num_classes = len(np.unique(y))
 
 acc_list = []
 
@@ -141,6 +140,7 @@ for selected_features in list_combinations:
     y=y[:num_ts*SAMPLE_SIZE]
     Y_resh = np.reshape(y,(num_ts//SAMPLE_SIZE,SAMPLE_SIZE,1))
     Y = Y_resh[:,1,:]
+    num_classes = len(np.unique(y))
 
     #Y_enc = [int.from_bytes(char.encode('utf-8'), byteorder="big") for char in Y ]
 
@@ -332,3 +332,5 @@ for selected_features in list_combinations:
 
 
 
+
+# %%
