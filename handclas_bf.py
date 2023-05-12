@@ -1,5 +1,5 @@
 # %%
-
+#LOADING PACKAGES
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -115,14 +115,10 @@ df = df.iloc[:num_ts]
 list_combinations = list()
 
 sample_set = set(ADC_channels)
-for n in range(3,4):
+for n in range(2,3):
     list_combinations += list(combinations(sample_set, n))
     
-
-
-
-
-
+    
 acc_list = []
 
 
@@ -168,8 +164,8 @@ for selected_features in list_combinations:
     M_TRAIN = X_train.shape[0]                     # number of training examples (2D)
     M_TEST = X_test.shape[0]                       # number of test examples (2D),full=X_test.shape[0]
     N = X_train.shape[2]                           # number of features
-    BATCH = M_TRAIN//100                           # batch size
-    EPOCH = 100                                    # number of epochs
+    BATCH = 256                           # batch size
+    EPOCH = 60                                    # number of epochs
     LR = 2e-3                          # learning rate of the gradient descent
     LAMBD = 3e-2                         # lambda in L2 regularizaion
     DP = 0.5                           # dropout rate
@@ -189,7 +185,7 @@ for selected_features in list_combinations:
                                  patience=1, verbose=1,
                                  factor=0.5, min_lr=1e-6)
 
-    early_stop = EarlyStopping(monitor='categorical_accuracy', min_delta=0,
+    early_stop = EarlyStopping(monitor='categorical_accuracy', min_delta=0.02,
                                patience=7, verbose=1, mode='auto',
                                baseline=0, restore_best_weights=True)
 
@@ -307,6 +303,9 @@ for selected_features in list_combinations:
 
     
     acc_list.append([max(history.history['val_categorical_accuracy']), selected_features])
+    
+    tf.keras.backend.clear_session()
+
     # tf.math.confusion_matrix(Y_test,y_pred)
     # #%%
     # # ROC PLOT
