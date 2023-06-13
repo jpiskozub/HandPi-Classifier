@@ -124,13 +124,13 @@ acc_list = []
 
 
 # %%
-for selected_features in list_combinations:
+for selected_features in ADC_channels:
     
     # droplist = [x for x in ADC_channels if x not in selected_features]
     
     # df.drop(columns =droplist)
     
-    x = df[list(selected_features)+IMU_channels].values
+    x = df[[selected_features]+IMU_channels].values
     y = df['sign'].values
     x=x[:num_ts*SAMPLE_SIZE]
     y=y[:num_ts*SAMPLE_SIZE]
@@ -302,7 +302,7 @@ for selected_features in list_combinations:
     plt.show()
 
     
-    acc_list.append([max(history.history['val_categorical_accuracy']), selected_features])
+    acc_list.append([test_acc, selected_features])
     
     tf.keras.backend.clear_session()
 
@@ -329,7 +329,7 @@ for selected_features in list_combinations:
     # plt.legend(loc="lower right")
     # plt.show()
 
-
+pd.DataFrame(acc_list).to_csv('handclas_bf_pp_1f_v1.csv')
 
 
 # %%
