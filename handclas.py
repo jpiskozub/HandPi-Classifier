@@ -1,3 +1,4 @@
+
 # %%
 
 import numpy as np
@@ -177,7 +178,7 @@ lr_decay = ReduceLROnPlateau(monitor='loss',
                              patience=1, verbose=1,
                              factor=0.5, min_lr=1e-6)
 
-early_stop = EarlyStopping(monitor='categorical_accuracy', min_delta=0,
+early_stop = EarlyStopping(monitor='categorical_accuracy', min_delta=.03,
                            patience=7, verbose=1, mode='auto',
                            baseline=0, restore_best_weights=True)
 
@@ -267,9 +268,9 @@ history = model.fit(X_train, Y_train, epochs=EPOCH, batch_size=BATCH,
 
 
 # %%
-# EVALUATION
-train_loss, train_acc = model.evaluate(X_train, Y_train,
-                                       batch_size=M_TRAIN, verbose=0)
+# # EVALUATION
+# train_loss, train_acc = model.evaluate(X_train, Y_train,
+#                                        batch_size=M_TRAIN, verbose=0)
 test_loss, test_acc = model.evaluate(X_test[:M_TEST], Y_test[:M_TEST],
                                      batch_size=M_TEST, verbose=0)
 
